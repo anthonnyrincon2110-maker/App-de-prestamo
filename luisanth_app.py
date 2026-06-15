@@ -144,7 +144,7 @@ else:
             st.session_state["usuario_actual"] = ""
             st.rerun()
 
-    # --- MENÚ GLOBAL E INDEPENDIENTE (IGUAL PARA TODOS) ---
+    # --- ÚNICO MENÚ GLOBAL ABSOLUTO (CORREGIDO DE RAÍZ) ---
     menu_opciones = [
         "📊 Panel Financiero", 
         "🔍 Buscador de Clientes",
@@ -232,7 +232,7 @@ else:
                                     st.success("¡Información y balances actualizados con éxito!")
                                     st.rerun()
                                 except sqlite3.IntegrityError:
-                                    st.error("Error: Esa cédula ya belongs a otra persona.")
+                                    st.error("Error: Esa cédula ya pertenece a otra persona.")
                                 conn.close()
                                 
                             if btn_eliminar:
@@ -294,7 +294,7 @@ else:
             st.table(datos_tabla)
 
     # ==========================================
-    # PANTALLA: PANEL FINANCIERO (VISTA TOTAL DEFINITIVA)
+    # PANTALLA: PANEL FINANCIERO (VISTA TOTAL SOCIOS)
     # ==========================================
     elif opcion == "📊 Panel Financiero":
         st.header("📊 Balance General - Control de Empresa")
@@ -442,7 +442,7 @@ else:
                 st.success(f"¡Contrato {tipo_contrato} activado de forma correcta!")
 
     # ==========================================
-    # PANTALLA: REGISTRAR COBRO (FECHA REAL ABIERTA Y ENLACE INTERACTIVO)
+    # PANTALLA: REGISTRAR COBRO (FECHA REAL ACTUALIZABLE DE INMEDIATO)
     # ==========================================
     elif opcion == "💸 Registrar Cobro (WhatsApp)":
         st.header("💸 Emisión de Facturas y Registro de Pagos")
@@ -469,8 +469,8 @@ else:
             
             st.markdown("---")
             
-            # --- APARTADO DE FECHAS ABIERTO PARA LOS DOS SOCIOS ---
-            fecha_pago = st.date_input("📅 Selecciona la fecha real en la que pagó el cliente (Ajustable para atrasados):", value=datetime.date.today())
+            # APARTADO GENERAL DE FECHAS ABIERTO PARA LOS DOS EN TIEMPO REAL
+            fecha_pago = st.date_input("📅 Selecciona la fecha real en la que pagó el cliente:", value=datetime.date.today())
             fecha_string = fecha_pago.strftime("%Y-%m-%d")
             
             st.markdown("---")
@@ -489,7 +489,6 @@ else:
                 
             nuevo_saldo_calculado = round(saldo_actual - abono_al_balance, 2)
             
-            # --- GENERACIÓN EN TIEMPO REAL ---
             if "San" in tipo:
                 texto_recibo = f"""
 📝 *RECIBO DE PAGO - LUISANTH*
@@ -530,12 +529,10 @@ else:
             st.markdown("### 📋 Vista Previa de la Factura Electrónica:")
             st.text_area("Copia este bloque de texto para enviarlo por WhatsApp:", value=texto_recibo.strip(), height=260)
             
-            # BOTÓN INTERACTIVO DE GUARDADO DE HISTORIAL
             if st.button("💾 Procesar Pago y Guardar en Historial"):
                 conn = conectar_bd()
                 cursor = conn.cursor()
                 
-                # Inserción con la fecha real del calendario asignada arriba
                 cursor.execute("""
                     INSERT INTO pagos (id_contrato, abono_capital, mora_cobrada, fecha) 
                     VALUES (?, ?, ?, ?)
@@ -554,7 +551,7 @@ else:
                 st.rerun()
 
     # ==========================================
-    # LAS DEMÁS PANTALLAS SE MANTIENEN SEGUROS
+    # LAS DEMÁS PANTALLAS
     # ==========================================
     elif opcion == "🧮 Calculadora de Cuotas":
         st.header("Calculadora de Alta Precisión LuisAnth")
