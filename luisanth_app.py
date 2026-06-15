@@ -50,17 +50,11 @@ def inicializar_bd():
         saldo_pendiente REAL NOT NULL, 
         tasa_interes REAL NOT NULL,
         turno_san INTEGER DEFAULT 0,
-        excedente_acumulado REAL DEFAULT 0.0, -- Almacena el dinero de más sucesivo
+        excedente_acumulado REAL DEFAULT 0.0, 
         estado TEXT DEFAULT 'Activo',
         FOREIGN KEY (id_cliente) REFERENCES clientes(id_cliente)
     )
     """)
-    
-    # Verificar si la columna excedente_acumulado existe
-    cursor.execute("PRAGMA table_info(contratos)")
-    columnas = [col[1] for col in cursor.fetchall()]
-    if 'excedente_acumulado' not in columnas:
-        cursor.execute("ALTER TABLE contratos ADD COLUMN excedente_acumulado REAL DEFAULT 0.0")
     
     # Tabla de Historial de Pagos
     cursor.execute("""
@@ -169,7 +163,7 @@ else:
     st.markdown("---")
 
     # ==========================================
-    # PANTALLA: HISTORIAL DE COBROS (EDITABLE Y BORRABLE)
+    # PANTALLA: HISTORIAL DE COBROS
     # ==========================================
     if opcion == "🗂️ Historial de Cobros":
         st.header("🗂️ Historial y Auditoría de Cobros")
@@ -515,7 +509,7 @@ else:
                     saldo_pendiente_inicial = monto_total_adeudado
                 else:
                     monto_total_adeudado = monto_entregado
-                    saldo_pendiente_inicial = monto_entregado
+                    saldo_pendiente_inicial = monto_total_adeudado
                 
                 conn = conectar_bd()
                 cursor = conn.cursor()
@@ -528,7 +522,7 @@ else:
                 st.success(f"¡Contrato {tipo_contrato} activado de forma correcta!")
 
     # ==========================================
-    # PANTALLA MATEMÁTICA: REGISTRAR COBRO (EXCEDENTES SUCESIVOS)
+    # PANTALLA: REGISTRAR COBRO (CUOTA EDITABLE LIBREMENTE)
     # ==========================================
     elif opcion == "💸 Registrar Cobro (WhatsApp)":
         st.header("💸 Emisión de Facturas y Registro de Pagos")
@@ -565,13 +559,15 @@ else:
             nuevo_excedente_total_guardar = exc_historico
             
             if "San" in tipo:
-                # Cuota obligatoria semanal fija = Monto total con intereses dividido semanas pactadas
+                # Sugerencia matemática por defecto
                 if semanas_pactadas > 0:
-                    monto_cuota_obligatoria = round(deuda_total_ini / semanas_pactadas, 2)
+                    sugerencia_cuota = round(deuda_total_ini / semanas_pactadas, 2)
                 else:
-                    monto_cuota_obligatoria = 0.0
+                    sugerencia_cuota = 0.0
                 
-                st.warning(f"📋 **Estructura Financiera del San:** Cuota Obligatoria por Semana: **${monto_cuota_obligatoria:,.2f}**")
+                # --- NUEVA MEJORA: CASILLA EDITABLE PARA LA CUOTA OBLIGATORIA DE LA SEMANA ---
+                monto_cuota_obligatoria = st.number_input("Monto de la Cuota Obligatoria establecida para esta semana ($):", min_value=0.0, value=float(sugerencia_cuota), step=50.0)
+                
                 if exc_historico > 0:
                     st.info(f"⭐ **Saldo a Favor Arrastrado de Semanas Anteriores:** ${exc_historico:,.2f}")
                 
@@ -581,21 +577,18 @@ else:
                 abono_al_balance = monto_pagando
                 pago_redito_efectivo = 0
                 
-                # Cálculo de excedentes dinámicos sucesivos
+                # Cálculo exacto de excedentes sucesivos basado en lo digitado en la cuota obligatoria
                 if monto_pagando > monto_cuota_obligatoria:
-                    # Entrega más dinero del obligatorio semanal. El excedente sube.
                     excedente_calculado_esta_semana = monto_pagando - monto_cuota_obligatoria
                     nuevo_excedente_total_guardar = round(exc_historico + excedente_calculado_esta_semana, 2)
                     nota_excedente = f"⚠️ *NOTA:* El cliente realizó un pago mayor a su cuota semanal obligatoria (${monto_cuota_obligatoria:,.2f}). El monto excedente de ${excedente_calculado_esta_semana:,.2f} se sumará a su saldo a favor y se aplicará para la semana siguiente (Total acumulado: ${nuevo_excedente_total_guardar:,.2f})."
                 elif monto_pagando == monto_cuota_obligatoria:
-                    # Paga exacto. El saldo de más histórico se mantiene intacto (Sucesivo)
                     nuevo_excedente_total_guardar = exc_historico
                     if exc_historico > 0:
                         nota_excedente = f"⭐ *NOTA:* El cliente pagó su cuota completa. El monto de más de la semana anterior (${exc_historico:,.2f}) seguirá estando de más a su favor de forma sucesiva para los próximos períodos."
                     else:
                         nota_excedente = "✅ El cliente se encuentra al día con la cuota de esta semana."
                 else:
-                    # Paga de menos. Se empieza a consumir el saldo a favor histórico si tenía
                     if exc_historico > 0:
                         faltante = monto_cuota_obligatoria - monto_pagando
                         if exc_historico >= faltante:
@@ -607,7 +600,6 @@ else:
                     else:
                         nota_excedente = "⚠️ El cliente realizó un pago parcial inferior a la cuota establecida."
             else:
-                # Esquema de Réditos
                 pago_redito_efectivo = st.number_input("Monto cobrado por concepto de Interés / Rédito ($):", min_value=0.0, step=100.0, value=float(saldo_actual)*(tasa_int/100))
                 abono_al_balance = st.number_input("Monto extra aportado para bajar el Capital base ($):", min_value=0.0, max_value=float(saldo_actual), step=100.0, value=0.0)
                 mora_cobrada = st.number_input("Mora o penalidad aplicada ($):", min_value=0.0, value=0.0, step=50.0)
@@ -616,7 +608,7 @@ else:
                 
             nuevo_saldo_calculado = round(saldo_actual - abono_al_balance, 2)
             
-            # --- CONSTRUCCIÓN DE LA FACTURA ELECTRÓNICA ---
+            # --- CONSTRUCCIÓN DE LA FACTURA ---
             if "San" in tipo:
                 texto_recibo = f"""
 📝 *RECIBO DE PAGO - LUISANTH*
@@ -664,7 +656,6 @@ else:
                 conn = conectar_bd()
                 cursor = conn.cursor()
                 
-                # Asentar la transacción en el historial de pagos
                 cursor.execute("""
                     INSERT INTO pagos (id_contrato, abono_capital, mora_cobrada, fecha) 
                     VALUES (?, ?, ?, ?)
@@ -674,7 +665,6 @@ else:
                     cursor.execute("UPDATE contratos SET saldo_pendiente = 0, excedente_acumulado = 0, estado = 'Inactivo' WHERE id_contrato = ?", (id_contrato,))
                     st.success(f"💥 ¡Cuenta liquidada con éxito para {nombre_clie}!")
                 else:
-                    # Actualizar balance pendiente y el excedente sucesivo
                     cursor.execute("UPDATE contratos SET saldo_pendiente = ?, excedente_acumulado = ? WHERE id_contrato = ?", (nuevo_saldo_calculado, nuevo_excedente_total_guardar, id_contrato))
                     st.success(f"✅ ¡Cobro guardado! Registrado de forma correcta con fecha del {fecha_string}.")
                     
