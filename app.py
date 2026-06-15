@@ -144,7 +144,7 @@ else:
             st.session_state["usuario_actual"] = ""
             st.rerun()
 
-    # --- MENÚ DE OPCIONES FIJO (MÁXIMA ACCESIBILIDAD PARA EL SOCIO) ---
+    # --- MENÚ GLOBAL E INDEPENDIENTE (IGUAL PARA TODOS) ---
     menu_opciones = [
         "📊 Panel Financiero", 
         "🔍 Buscador de Clientes",
@@ -232,7 +232,7 @@ else:
                                     st.success("¡Información y balances actualizados con éxito!")
                                     st.rerun()
                                 except sqlite3.IntegrityError:
-                                    st.error("Error: Esa cédula ya pertenece a otra persona.")
+                                    st.error("Error: Esa cédula ya belongs a otra persona.")
                                 conn.close()
                                 
                             if btn_eliminar:
@@ -294,7 +294,7 @@ else:
             st.table(datos_tabla)
 
     # ==========================================
-    # PANTALLA: PANEL FINANCIERO (VISTA COMPARTIDA TOTAL)
+    # PANTALLA: PANEL FINANCIERO (VISTA TOTAL DEFINITIVA)
     # ==========================================
     elif opcion == "📊 Panel Financiero":
         st.header("📊 Balance General - Control de Empresa")
@@ -442,7 +442,7 @@ else:
                 st.success(f"¡Contrato {tipo_contrato} activado de forma correcta!")
 
     # ==========================================
-    # PANTALLA REESTRUCTURADA: REGISTRAR COBRO (SIN FORMULARIOS TRASTRABADOS)
+    # PANTALLA: REGISTRAR COBRO (FECHA REAL ABIERTA Y ENLACE INTERACTIVO)
     # ==========================================
     elif opcion == "💸 Registrar Cobro (WhatsApp)":
         st.header("💸 Emisión de Facturas y Registro de Pagos")
@@ -469,31 +469,27 @@ else:
             
             st.markdown("---")
             
-            # --- APARTADO ABIERTO PARA ASIGNAR LA FECHA EXACTA EN QUE PAGÓ EL CLIENTE ---
-            if st.session_state["rol"] == "admin":
-                fecha_pago = st.date_input("📅 Fecha real en la que el cliente realizó el pago (Editable por Admin):", value=datetime.date.today())
-                fecha_string = fecha_pago.strftime("%Y-%m-%d")
-            else:
-                fecha_string = datetime.date.today().strftime("%Y-%m-%d")
-                st.write(f"📅 **Fecha de registro de factura:** {fecha_string}")
+            # --- APARTADO DE FECHAS ABIERTO PARA LOS DOS SOCIOS ---
+            fecha_pago = st.date_input("📅 Selecciona la fecha real en la que pagó el cliente (Ajustable para atrasados):", value=datetime.date.today())
+            fecha_string = fecha_pago.strftime("%Y-%m-%d")
             
             st.markdown("---")
             
             if "San" in tipo:
-                st.info(f"📋 **Modalidad actual: {tipo}**")
+                st.info(f"📋 **Modalidad: {tipo}**")
                 monto_pagando = st.number_input("Monto Total entregado por el cliente ($):", min_value=0.0, max_value=float(saldo_actual), step=100.0, value=1000.0 if float(saldo_actual) >= 1000.0 else float(saldo_actual))
                 mora_cobrada = st.number_input("Mora o penalidad aplicada ($):", min_value=0.0, value=0.0, step=50.0)
                 abono_al_balance = monto_pagando
                 pago_redito_efectivo = 0
             else:
-                st.info("📋 **Modalidad actual: Rédito**")
+                st.info("📋 **Modalidad: Rédito**")
                 pago_redito_efectivo = st.number_input("Monto cobrado por concepto de Interés / Rédito ($):", min_value=0.0, step=100.0, value=float(saldo_actual)*(tasa_int/100))
                 abono_al_balance = st.number_input("Monto extra aportado para bajar el Capital base ($):", min_value=0.0, max_value=float(saldo_actual), step=100.0, value=0.0)
                 mora_cobrada = st.number_input("Mora o penalidad aplicada ($):", min_value=0.0, value=0.0, step=50.0)
                 
             nuevo_saldo_calculado = round(saldo_actual - abono_al_balance, 2)
             
-            # --- GENERACIÓN DINÁMICA DEL RECIBO QUE RESPONDE AL CAMBIO DE FECHA ---
+            # --- GENERACIÓN EN TIEMPO REAL ---
             if "San" in tipo:
                 texto_recibo = f"""
 📝 *RECIBO DE PAGO - LUISANTH*
@@ -534,12 +530,12 @@ else:
             st.markdown("### 📋 Vista Previa de la Factura Electrónica:")
             st.text_area("Copia este bloque de texto para enviarlo por WhatsApp:", value=texto_recibo.strip(), height=260)
             
-            # BOTÓN EXPLICITO DE GUARDADO (AFUERA DE CUALQUIER FORMULARIO TRABADO)
+            # BOTÓN INTERACTIVO DE GUARDADO DE HISTORIAL
             if st.button("💾 Procesar Pago y Guardar en Historial"):
                 conn = conectar_bd()
                 cursor = conn.cursor()
                 
-                # Insertamos la transacción con la fecha exacta seleccionada arriba
+                # Inserción con la fecha real del calendario asignada arriba
                 cursor.execute("""
                     INSERT INTO pagos (id_contrato, abono_capital, mora_cobrada, fecha) 
                     VALUES (?, ?, ?, ?)
@@ -550,11 +546,11 @@ else:
                     st.success(f"💥 ¡Cuenta liquidada con éxito para {nombre_clie}!")
                 else:
                     cursor.execute("UPDATE contratos SET saldo_pendiente = ? WHERE id_contrato = ?", (nuevo_saldo_calculado, id_contrato))
-                    st.success(f"✅ ¡Cobro guardado! El historial se actualizó al día {fecha_string}.")
+                    st.success(f"✅ ¡Cobro guardado! Registrado con fecha real del {fecha_string}.")
                     
                 conn.commit()
                 conn.close()
-                time.sleep(1.5)
+                time.sleep(1.2)
                 st.rerun()
 
     # ==========================================
