@@ -144,7 +144,7 @@ else:
             st.session_state["usuario_actual"] = ""
             st.rerun()
 
-    # --- ÚNICO MENÚ GLOBAL ABSOLUTO (CORREGIDO DE RAÍZ) ---
+    # --- MENÚ GLOBAL E INDEPENDIENTE ---
     menu_opciones = [
         "📊 Panel Financiero", 
         "🔍 Buscador de Clientes",
@@ -294,7 +294,7 @@ else:
             st.table(datos_tabla)
 
     # ==========================================
-    # PANTALLA: PANEL FINANCIERO (VISTA TOTAL SOCIOS)
+    # PANTALLA: PANEL FINANCIERO
     # ==========================================
     elif opcion == "📊 Panel Financiero":
         st.header("📊 Balance General - Control de Empresa")
@@ -429,7 +429,7 @@ else:
                     saldo_pendiente_inicial = monto_total_adeudado
                 else:
                     monto_total_adeudado = monto_entregado
-                    saldo_pendiente_inicial = monto_entregado
+                    saldo_pendiente_inicial = monto_total_adeudado
                 
                 conn = conectar_bd()
                 cursor = conn.cursor()
@@ -442,7 +442,7 @@ else:
                 st.success(f"¡Contrato {tipo_contrato} activado de forma correcta!")
 
     # ==========================================
-    # PANTALLA: REGISTRAR COBRO (FECHA REAL ACTUALIZABLE DE INMEDIATO)
+    # PANTALLA: REGISTRAR COBRO (CASILLA REESTRUCTURADA SIN TOPES AUTOMÁTICOS)
     # ==========================================
     elif opcion == "💸 Registrar Cobro (WhatsApp)":
         st.header("💸 Emisión de Facturas y Registro de Pagos")
@@ -469,7 +469,7 @@ else:
             
             st.markdown("---")
             
-            # APARTADO GENERAL DE FECHAS ABIERTO PARA LOS DOS EN TIEMPO REAL
+            # Selector de fechas libre para registrar cobros atrasados/adelantados
             fecha_pago = st.date_input("📅 Selecciona la fecha real en la que pagó el cliente:", value=datetime.date.today())
             fecha_string = fecha_pago.strftime("%Y-%m-%d")
             
@@ -477,7 +477,8 @@ else:
             
             if "San" in tipo:
                 st.info(f"📋 **Modalidad: {tipo}**")
-                monto_pagando = st.number_input("Monto Total entregado por el cliente ($):", min_value=0.0, max_value=float(saldo_actual), step=100.0, value=1000.0 if float(saldo_actual) >= 1000.0 else float(saldo_actual))
+                # Casilla libre de topes: se inicializa en 0.0 para que escribas libremente el valor real
+                monto_pagando = st.number_input("Monto Total entregado por el cliente ($):", min_value=0.0, max_value=float(saldo_actual), step=100.0, value=0.0)
                 mora_cobrada = st.number_input("Mora o penalidad aplicada ($):", min_value=0.0, value=0.0, step=50.0)
                 abono_al_balance = monto_pagando
                 pago_redito_efectivo = 0
