@@ -2,6 +2,7 @@ import sqlite3
 import streamlit as st
 import datetime
 import time
+import pandas as pd
 
 # --- CONFIGURACIÓN DE LA PÁGINA Y BLINDAJE DE MENÚS ---
 st.set_page_config(page_title="LuisAnth - Sistema Completo", page_icon="💰", layout="centered")
@@ -151,6 +152,7 @@ else:
         "🔍 Buscador de Clientes",
         "📋 Cartera y Deudas",
         "🗂️ Historial de Cobros",
+        "📥 Exportar Reportes (Excel/PDF)",
         "👤 Registrar Cliente", 
         "📝 Crear Préstamo / San",
         "💸 Registrar Cobro (WhatsApp)",
@@ -163,9 +165,102 @@ else:
     st.markdown("---")
 
     # ==========================================
+    # NUEVA PANTALLA: EXPORTAR DATA A EXCEL Y PDF
+    # ==========================================
+    if opcion == "📥 Exportar Reportes (Excel/PDF)":
+        st.header("📥 Descarga de Reportes y Auditoría Financiera")
+        st.write("Filtra y exporta el historial de pagos y deudas actuales de los clientes registrados:")
+        
+        col_f1, col_f2 = st.columns(2)
+        with col_f1:
+            fecha_inicio_rep = st.date_input("Fecha Inicial del Reporte:", value=datetime.date.today() - datetime.timedelta(days=7))
+        with col_f2:
+            fecha_final_rep = st.date_input("Fecha Final del Reporte:", value=datetime.date.today())
+            
+        if fecha_inicio_rep <= fecha_final_rep:
+            conn = conectar_bd()
+            query_reporte = """
+                SELECT cl.nombre AS [Cliente], cl.cedula AS [Cédula], cl.telefono AS [Teléfono], 
+                       co.tipo AS [Modalidad], p.abono_capital AS [Monto Pagado], p.mora_cobrada AS [Mora], 
+                       p.fecha AS [Fecha de Pago], co.saldo_pendiente AS [Deuda Actual]
+                FROM pagos p
+                JOIN contratos co ON p.id_contrato = co.id_contrato
+                JOIN clientes cl ON co.id_cliente = cl.id_cliente
+                WHERE p.fecha BETWEEN ? AND ?
+                ORDER BY p.fecha DESC
+            """
+            df = pd.read_sql_query(query_reporte, conn, params=(fecha_inicio_rep.strftime("%Y-%m-%d"), fecha_final_rep.strftime("%Y-%m-%d")))
+            conn.close()
+            
+            if df.empty:
+                st.info("No se encontraron registros de cobros en ese rango de fechas seleccionado.")
+            else:
+                st.write(f"📊 **Vista previa del reporte ({len(df)} pagos detectados):**")
+                st.dataframe(df)
+                
+                df_descarga = df.copy()
+                
+                # --- BOTÓN 1: EXPORTACIÓN EXCEL (.XLSX) ---
+                try:
+                    import io
+                    buffer_excel = io.BytesIO()
+                    with pd.ExcelWriter(buffer_excel, engine='xlsxwriter') as writer:
+                        df_descarga.to_excel(writer, index=False, sheet_name='Pagos_LuisAnth')
+                    buffer_excel.seek(0)
+                    
+                    st.download_button(
+                        label="📥 Descargar Reporte en Excel (.xlsx)",
+                        data=buffer_excel,
+                        file_name=f"Reporte_Pagos_{fecha_inicio_rep}_al_{fecha_final_rep}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+                except Exception:
+                    csv = df_descarga.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="📥 Descargar Reporte en CSV (Compatible con Excel)",
+                        data=csv,
+                        file_name=f"Reporte_Pagos_{fecha_inicio_rep}_al_{fecha_final_rep}.csv",
+                        mime='text/csv'
+                    )
+                
+                # --- BOTÓN 2: EXPORTACIÓN PDF ---
+                html_pdf = f"""
+                <html>
+                <head>
+                    <style>
+                        body {{ font-family: Arial, sans-serif; margin: 20px; color: #333; }}
+                        h2 {{ text-align: center; color: #000; text-transform: uppercase; }}
+                        p {{ text-align: center; font-size: 14px; margin-bottom: 30px; }}
+                        table {{ width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }}
+                        th, td {{ border: 1px solid #ddd; padding: 10px; text-align: left; }}
+                        th {{ background-color: #f2f2f2; color: #000; font-weight: bold; }}
+                        tr:nth-child(even) {{ background-color: #f9f9f9; }}
+                    </style>
+                </head>
+                <body>
+                    <h2>REPORTE OFICIAL DE PAGOS - LUISANTH</h2>
+                    <p><b>Período del Reporte:</b> {fecha_inicio_rep} al {fecha_final_rep} | <b>Generado el:</b> {datetime.date.today()}</p>
+                    {df_descarga.to_html(index=False)}
+                    <br><br>
+                    <p style='text-align:right; font-size:12px;'><i>LuisAnth S.R.L. © Control y Gestión de Cartera Cortada.</i></p>
+                </body>
+                </html>
+                """
+                
+                st.download_button(
+                    label="📄 Descargar Reporte en Formato PDF/Imprimible",
+                    data=html_pdf,
+                    file_name=f"Reporte_Pagos_{fecha_inicio_rep}_al_{fecha_final_rep}.html",
+                    mime="text/html"
+                )
+                st.caption("ℹ️ *Nota del PDF:* El archivo descargable se guardará en formato HTML optimizado. Al abrirlo, selecciona 'Imprimir' y 'Guardar como PDF' para guardarlo formalmente.")
+        else:
+            st.error("Error: La fecha inicial no puede ser mayor que la fecha final.")
+
+    # ==========================================
     # PANTALLA: HISTORIAL DE COBROS
     # ==========================================
-    if opcion == "🗂️ Historial de Cobros":
+    elif opcion == "🗂️ Historial de Cobros":
         st.header("🗂️ Historial y Auditoría de Cobros")
         
         conn = conectar_bd()
@@ -509,7 +604,7 @@ else:
                     saldo_pendiente_inicial = monto_total_adeudado
                 else:
                     monto_total_adeudado = monto_entregado
-                    saldo_pendiente_inicial = monto_total_adeudado
+                    saldo_pendiente_inicial = monto_entregado
                 
                 conn = conectar_bd()
                 cursor = conn.cursor()
@@ -522,7 +617,7 @@ else:
                 st.success(f"¡Contrato {tipo_contrato} activado de forma correcta!")
 
     # ==========================================
-    # PANTALLA: REGISTRAR COBRO (CUOTA EDITABLE LIBREMENTE)
+    # PANTALLA: REGISTRAR COBRO (WHATSAPP)
     # ==========================================
     elif opcion == "💸 Registrar Cobro (WhatsApp)":
         st.header("💸 Emisión de Facturas y Registro de Pagos")
@@ -553,19 +648,16 @@ else:
             
             st.markdown("---")
             
-            # --- EVALUACIÓN DE EXCEDENTES SUCESIVOS ---
             monto_cuota_obligatoria = 0.0
             excedente_calculado_esta_semana = 0.0
             nuevo_excedente_total_guardar = exc_historico
             
             if "San" in tipo:
-                # Sugerencia matemática por defecto
                 if semanas_pactadas > 0:
                     sugerencia_cuota = round(deuda_total_ini / semanas_pactadas, 2)
                 else:
                     sugerencia_cuota = 0.0
                 
-                # --- NUEVA MEJORA: CASILLA EDITABLE PARA LA CUOTA OBLIGATORIA DE LA SEMANA ---
                 monto_cuota_obligatoria = st.number_input("Monto de la Cuota Obligatoria establecida para esta semana ($):", min_value=0.0, value=float(sugerencia_cuota), step=50.0)
                 
                 if exc_historico > 0:
@@ -577,7 +669,6 @@ else:
                 abono_al_balance = monto_pagando
                 pago_redito_efectivo = 0
                 
-                # Cálculo exacto de excedentes sucesivos basado en lo digitado en la cuota obligatoria
                 if monto_pagando > monto_cuota_obligatoria:
                     excedente_calculado_esta_semana = monto_pagando - monto_cuota_obligatoria
                     nuevo_excedente_total_guardar = round(exc_historico + excedente_calculado_esta_semana, 2)
@@ -608,7 +699,6 @@ else:
                 
             nuevo_saldo_calculado = round(saldo_actual - abono_al_balance, 2)
             
-            # --- CONSTRUCCIÓN DE LA FACTURA ---
             if "San" in tipo:
                 texto_recibo = f"""
 📝 *RECIBO DE PAGO - LUISANTH*
