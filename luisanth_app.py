@@ -50,10 +50,17 @@ def inicializar_bd():
         saldo_pendiente REAL NOT NULL, 
         tasa_interes REAL NOT NULL,
         turno_san INTEGER DEFAULT 0,
+        excedente_acumulado REAL DEFAULT 0.0, -- Almacena el dinero de más sucesivo
         estado TEXT DEFAULT 'Activo',
         FOREIGN KEY (id_cliente) REFERENCES clientes(id_cliente)
     )
     """)
+    
+    # Verificar si la columna excedente_acumulado existe
+    cursor.execute("PRAGMA table_info(contratos)")
+    columnas = [col[1] for col in cursor.fetchall()]
+    if 'excedente_acumulado' not in columnas:
+        cursor.execute("ALTER TABLE contratos ADD COLUMN excedente_acumulado REAL DEFAULT 0.0")
     
     # Tabla de Historial de Pagos
     cursor.execute("""
@@ -144,7 +151,7 @@ else:
             st.session_state["usuario_actual"] = ""
             st.rerun()
 
-    # --- MENÚ GLOBAL E INDEPENDIENTE UNIFICADO ---
+    # --- MENÚ GLOBAL E INDEPENDIENTE ---
     menu_opciones = [
         "📊 Panel Financiero", 
         "🔍 Buscador de Clientes",
@@ -162,7 +169,7 @@ else:
     st.markdown("---")
 
     # ==========================================
-    # PANTALLA NEW: HISTORIAL DE COBROS (EDITABLE Y BORRABLE)
+    # PANTALLA: HISTORIAL DE COBROS (EDITABLE Y BORRABLE)
     # ==========================================
     if opcion == "🗂️ Historial de Cobros":
         st.header("🗂️ Historial y Auditoría de Cobros")
@@ -206,8 +213,6 @@ else:
                             if btn_edit_pago:
                                 conn = conectar_bd()
                                 cursor = conn.cursor()
-                                
-                                # Lógica Contable: Revertimos el abono viejo y sumamos el nuevo
                                 diferencia_balance = abono - nuevo_monto_pago
                                 nuevo_saldo_contrato = round(saldo_actual_c + diferencia_balance, 2)
                                 
@@ -223,8 +228,6 @@ else:
                             if btn_del_pago:
                                 conn = conectar_bd()
                                 cursor = conn.cursor()
-                                
-                                # Al borrar el cobro, la deuda del cliente vuelve a subir de inmediato
                                 nuevo_saldo_contrato = round(saldo_actual_c + abono, 2)
                                 
                                 cursor.execute("DELETE FROM pagos WHERE id_pago=?", (id_pago,))
@@ -252,7 +255,7 @@ else:
         cursor = conn.cursor()
         cursor.execute("""
             SELECT cl.id_cliente, cl.nombre, cl.cedula, cl.telefono, cl.direccion, cl.dia_pago, cl.modalidad_pago, cl.estado,
-                   co.id_contrato, co.tipo, co.capital_prestado, co.monto_total_adeudado, co.saldo_pendiente
+                   co.id_contrato, co.tipo, co.capital_prestado, co.monto_total_adeudado, co.saldo_pendiente, co.excedente_acumulado
             FROM clientes cl
             LEFT JOIN contratos co ON cl.id_cliente = co.id_cliente AND co.estado = 'Activo'
             WHERE cl.nombre LIKE ? OR cl.cedula LIKE ?
@@ -263,7 +266,7 @@ else:
         
         if resultados:
             for r in resultados:
-                id_clie, nombre_clie, cedula_clie, telf_clie, dir_clie, dia_clie, mod_clie, est_clie, id_cont, tipo_cont, cap_pres, tot_adeu, saldo_cont = r
+                id_clie, nombre_clie, cedula_clie, telf_clie, dir_clie, dia_clie, mod_clie, est_clie, id_cont, tipo_cont, cap_pres, tot_adeu, saldo_cont, exc_acum = r
                 
                 label_tarjeta = f"👤 {nombre_clie} - Cédula: {cedula_clie}"
                 if tipo_cont:
@@ -287,7 +290,9 @@ else:
                                 st.write(f"📋 **Estructura Interna del Contrato ({tipo_cont}):**")
                                 st.write(f"🔹 **Capital Neto Entregado:** ${cap_pres:,.2f}")
                                 st.write(f"🔹 **Monto Adeudado Inicial (Con Interés):** ${tot_adeu:,.2f}")
+                                st.write(f"🔹 **Excedente / Saldo a Favor Histórico:** ${exc_acum:,.2f}")
                                 nuevo_saldo = st.number_input("Corregir Balance Pendiente Total Actual ($):", min_value=0.0, value=float(saldo_cont), step=100.0)
+                                nuevo_exc = st.number_input("Corregir Excedente Acumulado ($):", min_value=0.0, value=float(exc_acum), step=100.0)
                             
                             st.markdown("---")
                             col_btn1, col_btn2 = st.columns(2)
@@ -307,7 +312,7 @@ else:
                                     """, (nuevo_nombre, nueva_cedula, nuevo_telf, nueva_dir, nuevo_dia, nueva_mod, nuevo_est, id_clie))
                                     
                                     if id_cont:
-                                        cursor.execute("UPDATE contratos SET saldo_pendiente=? WHERE id_contrato=?", (nuevo_saldo, id_cont))
+                                        cursor.execute("UPDATE contratos SET saldo_pendiente=?, excedente_acumulado=? WHERE id_contrato=?", (nuevo_saldo, nuevo_exc, id_cont))
                                         
                                     conn.commit()
                                     st.success("¡Información y balances actualizados con éxito!")
@@ -336,6 +341,7 @@ else:
                             st.write(f"💵 **Capital Prestado:** ${cap_pres:,.2f}")
                             st.write(f"💰 **Total con Intereses:** ${tot_adeu:,.2f}")
                             st.write(f"📉 **Balance Pendiente Actual:** ${saldo_cont:,.2f}")
+                            st.write(f"⭐ **Excedente Guardado:** ${exc_acum:,.2f}")
         else:
             st.warning("No hay coincidencias en la base de datos.")
 
@@ -348,7 +354,7 @@ else:
         conn = conectar_bd()
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT cl.nombre, co.tipo, co.capital_prestado, co.monto_total_adeudado, co.saldo_pendiente
+            SELECT cl.nombre, co.tipo, co.capital_prestado, co.monto_total_adeudado, co.saldo_pendiente, co.excedente_acumulado
             FROM clientes cl
             LEFT JOIN contratos co ON cl.id_cliente = co.id_cliente
             WHERE co.estado = 'Activo' OR co.estado IS NULL
@@ -358,11 +364,11 @@ else:
         conn.close()
         
         if not cartera:
-            st.info("No hay transacciones activas.")
+            st.info("No hay deudas ni contratos activos registrados.")
         else:
             datos_tabla = []
             for item in cartera:
-                nombre_c, tipo_c, cap_p, tot_a, pend_c = item
+                nombre_c, tipo_c, cap_p, tot_a, pend_c, exc_a = item
                 modalidad_visual = tipo_c if tipo_c else "Sin contrato activo"
                 
                 datos_tabla.append({
@@ -370,12 +376,13 @@ else:
                     "Modalidad": modalidad_visual,
                     "Capital Prestado": f"${cap_p:,.2f}" if cap_p else "$0.00",
                     "Deuda Inicial Total": f"${tot_a:,.2f}" if tot_a else "$0.00",
-                    "Balance Pendiente Actual": f"${pend_c:,.2f}" if pend_c else "$0.00"
+                    "Balance Pendiente Actual": f"${pend_c:,.2f}" if pend_c else "$0.00",
+                    "Saldo a Favor Histórico": f"${exc_a:,.2f}" if exc_a else "$0.00"
                 })
             st.table(datos_tabla)
 
     # ==========================================
-    # PANTALLA: PANEL FINANCIERO (CON CONEXIÓN AL HISTORIAL AUTOMATIZADA)
+    # PANTALLA: PANEL FINANCIERO
     # ==========================================
     elif opcion == "📊 Panel Financiero":
         st.header("📊 Balance General - Control de Empresa")
@@ -496,9 +503,7 @@ else:
             tasa_defecto = 10.0 if tipo_contrato == "Redito" else 20.0
             tasa = st.number_input("Tasa de interés (%):", min_value=0.0, value=tasa_defecto, step=1.0)
             
-            turno_san = 0
-            if "San" in tipo_contrato:
-                turno_san = st.number_input("Asignar Número de Turno/Cobro para el San:", min_value=1, value=1, step=1)
+            turno_san = st.number_input("Asignar Número de Turno/Cobro o Total de Semanas del Contrato:", min_value=1, value=15, step=1)
             
             if st.button("Activar Contrato"):
                 id_clie = opciones_clientes[cliente_seleccionado]
@@ -515,15 +520,15 @@ else:
                 conn = conectar_bd()
                 cursor = conn.cursor()
                 cursor.execute("""
-                    INSERT INTO contratos (id_cliente, tipo, monto_inicial, capital_prestado, monto_total_adeudado, saldo_pendiente, tasa_interes, turno_san)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO contratos (id_cliente, tipo, monto_inicial, capital_prestado, monto_total_adeudado, saldo_pendiente, tasa_interes, turno_san, excedente_acumulado)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0.0)
                 """, (id_clie, tipo_contrato, monto_entregado, capital_prestado, monto_total_adeudado, saldo_pendiente_inicial, tasa, turno_san))
                 conn.commit()
                 conn.close()
                 st.success(f"¡Contrato {tipo_contrato} activado de forma correcta!")
 
     # ==========================================
-    # PANTALLA: REGISTRAR COBRO (WHATSAPP)
+    # PANTALLA MATEMÁTICA: REGISTRAR COBRO (EXCEDENTES SUCESIVOS)
     # ==========================================
     elif opcion == "💸 Registrar Cobro (WhatsApp)":
         st.header("💸 Emisión de Facturas y Registro de Pagos")
@@ -531,7 +536,7 @@ else:
         conn = conectar_bd()
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT co.id_contrato, cl.nombre, co.tipo, co.saldo_pendiente, co.tasa_interes, cl.cedula, cl.telefono, cl.direccion
+            SELECT co.id_contrato, cl.nombre, co.tipo, co.saldo_pendiente, co.tasa_interes, cl.cedula, cl.telefono, cl.direccion, co.turno_san, co.monto_total_adeudado, co.excedente_acumulado
             FROM contratos co 
             JOIN clientes cl ON co.id_cliente = cl.id_cliente 
             WHERE co.estado = 'Activo'
@@ -546,7 +551,7 @@ else:
             seleccion = st.selectbox("Selecciona el préstamo a cobrar:", list(dic_contratos.keys()))
             
             contrato_data = dic_contratos[seleccion]
-            id_contrato, nombre_clie, tipo, saldo_actual, tasa_int, cedula_clie, telefono_clie, direccion_clie = contrato_data
+            id_contrato, nombre_clie, tipo, saldo_actual, tasa_int, cedula_clie, telefono_clie, direccion_clie, semanas_pactadas, deuda_total_ini, exc_historico = contrato_data
             
             st.markdown("---")
             fecha_pago = st.date_input("📅 Selecciona la fecha real en la que pagó el cliente:", value=datetime.date.today())
@@ -554,20 +559,64 @@ else:
             
             st.markdown("---")
             
+            # --- EVALUACIÓN DE EXCEDENTES SUCESIVOS ---
+            monto_cuota_obligatoria = 0.0
+            excedente_calculado_esta_semana = 0.0
+            nuevo_excedente_total_guardar = exc_historico
+            
             if "San" in tipo:
-                st.info(f"📋 **Modalidad: {tipo}**")
-                monto_pagando = st.number_input("Monto Total entregado por el cliente ($):", min_value=0.0, max_value=float(saldo_actual), step=100.0, value=0.0)
+                # Cuota obligatoria semanal fija = Monto total con intereses dividido semanas pactadas
+                if semanas_pactadas > 0:
+                    monto_cuota_obligatoria = round(deuda_total_ini / semanas_pactadas, 2)
+                else:
+                    monto_cuota_obligatoria = 0.0
+                
+                st.warning(f"📋 **Estructura Financiera del San:** Cuota Obligatoria por Semana: **${monto_cuota_obligatoria:,.2f}**")
+                if exc_historico > 0:
+                    st.info(f"⭐ **Saldo a Favor Arrastrado de Semanas Anteriores:** ${exc_historico:,.2f}")
+                
+                monto_pagando = st.number_input("Monto REAL que está entregando en físico el cliente ($):", min_value=0.0, max_value=float(saldo_actual), step=100.0, value=0.0)
                 mora_cobrada = st.number_input("Mora o penalidad aplicada ($):", min_value=0.0, value=0.0, step=50.0)
+                
                 abono_al_balance = monto_pagando
                 pago_redito_efectivo = 0
+                
+                # Cálculo de excedentes dinámicos sucesivos
+                if monto_pagando > monto_cuota_obligatoria:
+                    # Entrega más dinero del obligatorio semanal. El excedente sube.
+                    excedente_calculado_esta_semana = monto_pagando - monto_cuota_obligatoria
+                    nuevo_excedente_total_guardar = round(exc_historico + excedente_calculado_esta_semana, 2)
+                    nota_excedente = f"⚠️ *NOTA:* El cliente realizó un pago mayor a su cuota semanal obligatoria (${monto_cuota_obligatoria:,.2f}). El monto excedente de ${excedente_calculado_esta_semana:,.2f} se sumará a su saldo a favor y se aplicará para la semana siguiente (Total acumulado: ${nuevo_excedente_total_guardar:,.2f})."
+                elif monto_pagando == monto_cuota_obligatoria:
+                    # Paga exacto. El saldo de más histórico se mantiene intacto (Sucesivo)
+                    nuevo_excedente_total_guardar = exc_historico
+                    if exc_historico > 0:
+                        nota_excedente = f"⭐ *NOTA:* El cliente pagó su cuota completa. El monto de más de la semana anterior (${exc_historico:,.2f}) seguirá estando de más a su favor de forma sucesiva para los próximos períodos."
+                    else:
+                        nota_excedente = "✅ El cliente se encuentra al día con la cuota de esta semana."
+                else:
+                    # Paga de menos. Se empieza a consumir el saldo a favor histórico si tenía
+                    if exc_historico > 0:
+                        faltante = monto_cuota_obligatoria - monto_pagando
+                        if exc_historico >= faltante:
+                            nuevo_excedente_total_guardar = round(exc_historico - faltante, 2)
+                            nota_excedente = f"🔹 *NOTA:* El cliente pagó menos de la cuota semanal. Se cubrió el faltante de ${faltante:,.2f} usando su saldo a favor acumulado. Le resta un excedente de: ${nuevo_excedente_total_guardar:,.2f}."
+                        else:
+                            nuevo_excedente_total_guardar = 0.0
+                            nota_excedente = f"⚠️ *NOTA:* El cliente pagó de menos y consumió la totalidad de su excedente guardado."
+                    else:
+                        nota_excedente = "⚠️ El cliente realizó un pago parcial inferior a la cuota establecida."
             else:
-                st.info("📋 **Modalidad: Rédito**")
+                # Esquema de Réditos
                 pago_redito_efectivo = st.number_input("Monto cobrado por concepto de Interés / Rédito ($):", min_value=0.0, step=100.0, value=float(saldo_actual)*(tasa_int/100))
                 abono_al_balance = st.number_input("Monto extra aportado para bajar el Capital base ($):", min_value=0.0, max_value=float(saldo_actual), step=100.0, value=0.0)
                 mora_cobrada = st.number_input("Mora o penalidad aplicada ($):", min_value=0.0, value=0.0, step=50.0)
+                nota_excedente = "Recibo ordinario bajo el esquema de Rédito Fijo s/ Balance."
+                monto_pagando = abono_al_balance
                 
             nuevo_saldo_calculado = round(saldo_actual - abono_al_balance, 2)
             
+            # --- CONSTRUCCIÓN DE LA FACTURA ELECTRÓNICA ---
             if "San" in tipo:
                 texto_recibo = f"""
 📝 *RECIBO DE PAGO - LUISANTH*
@@ -578,8 +627,11 @@ else:
 *Fecha de Pago:* {fecha_string}
 *Modalidad:* {tipo}
 -------------------------------------------
-*Monto Pagando:* ${monto_pagando:,.2f}
+*Cuota Semanal Obligatoria:* ${monto_cuota_obligatoria:,.2f}
+*Monto Real Pagado:* ${monto_pagando:,.2f}
 *Mora Aplicada:* ${mora_cobrada:,.2f}
+-------------------------------------------
+{nota_excedente}
 -------------------------------------------
 *Balance Pendiente Total:* ${nuevo_saldo_calculado:,.2f}
 -------------------------------------------
@@ -606,23 +658,25 @@ else:
                 """
             
             st.markdown("### 📋 Vista Previa de la Factura Electrónica:")
-            st.text_area("Copia este bloque de texto para enviarlo por WhatsApp:", value=texto_recibo.strip(), height=260)
+            st.text_area("Copia este bloque de texto para enviarlo por WhatsApp:", value=texto_recibo.strip(), height=290)
             
             if st.button("💾 Procesar Pago y Guardar en Historial"):
                 conn = conectar_bd()
                 cursor = conn.cursor()
                 
+                # Asentar la transacción en el historial de pagos
                 cursor.execute("""
                     INSERT INTO pagos (id_contrato, abono_capital, mora_cobrada, fecha) 
                     VALUES (?, ?, ?, ?)
                 """, (id_contrato, abono_al_balance, mora_cobrada, fecha_string))
                 
                 if nuevo_saldo_calculado <= 0:
-                    cursor.execute("UPDATE contratos SET saldo_pendiente = 0, estado = 'Inactivo' WHERE id_contrato = ?", (id_contrato,))
+                    cursor.execute("UPDATE contratos SET saldo_pendiente = 0, excedente_acumulado = 0, estado = 'Inactivo' WHERE id_contrato = ?", (id_contrato,))
                     st.success(f"💥 ¡Cuenta liquidada con éxito para {nombre_clie}!")
                 else:
-                    cursor.execute("UPDATE contratos SET saldo_pendiente = ? WHERE id_contrato = ?", (nuevo_saldo_calculado, id_contrato))
-                    st.success(f"✅ ¡Cobro guardado! Registrado con fecha real del {fecha_string}.")
+                    # Actualizar balance pendiente y el excedente sucesivo
+                    cursor.execute("UPDATE contratos SET saldo_pendiente = ?, excedente_acumulado = ? WHERE id_contrato = ?", (nuevo_saldo_calculado, nuevo_excedente_total_guardar, id_contrato))
+                    st.success(f"✅ ¡Cobro guardado! Registrado de forma correcta con fecha del {fecha_string}.")
                     
                 conn.commit()
                 conn.close()
