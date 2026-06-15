@@ -144,7 +144,7 @@ else:
             st.session_state["usuario_actual"] = ""
             st.rerun()
 
-    # --- MENÚ COMPLETAMENTE UNIFICADO PARA AMBOS ---
+    # --- MENÚ DE OPCIONES FIJO (MÁXIMA ACCESIBILIDAD PARA EL SOCIO) ---
     menu_opciones = [
         "📊 Panel Financiero", 
         "🔍 Buscador de Clientes",
@@ -294,10 +294,10 @@ else:
             st.table(datos_tabla)
 
     # ==========================================
-    # PANTALLA: PANEL FINANCIERO (VISTA GENERAL, EDICIÓN BLOQUEADA AL SOCIO)
+    # PANTALLA: PANEL FINANCIERO (VISTA COMPARTIDA TOTAL)
     # ==========================================
     elif opcion == "📊 Panel Financiero":
-        st.header("Balance General - Control Interno")
+        st.header("📊 Balance General - Control de Empresa")
         
         conn = conectar_bd()
         cursor = conn.cursor()
@@ -312,7 +312,7 @@ else:
                 capital_total = nuevo_capital
                 st.success("¡Capital base actualizado!")
         else:
-            st.metric("Capital Total Base (Solo Lectura)", f"${capital_total:,.2f}")
+            st.markdown(f"💼 **Capital Inicial de la Empresa:** ${capital_total:,.2f} *(Modo Lectura)*")
 
         cursor.execute("SELECT capital_prestado, monto_total_adeudado, saldo_pendiente, tasa_interes, tipo FROM contratos WHERE estado = 'Activo'")
         contratos_activos = cursor.fetchall()
@@ -404,7 +404,7 @@ else:
         conn.close()
         
         if not clientes_activos:
-            st.sidebar.warning("Debes registrar al menos un cliente activo primero.")
+            st.warning("Debes registrar al menos un cliente activo primero.")
         else:
             opciones_clientes = {c[1]: c[0] for c in clientes_activos}
             cliente_seleccionado = st.selectbox("Selecciona el Cliente:", list(opciones_clientes.keys()))
@@ -442,10 +442,10 @@ else:
                 st.success(f"¡Contrato {tipo_contrato} activado de forma correcta!")
 
     # ==========================================
-    # PANTALLA: REGISTRAR COBRO (FACTURAS EDITABLES CON BOTÓN GUARDAR)
+    # PANTALLA REESTRUCTURADA: REGISTRAR COBRO (SIN FORMULARIOS TRASTRABADOS)
     # ==========================================
     elif opcion == "💸 Registrar Cobro (WhatsApp)":
-        st.header("Registrar Cobros y Generar Factura Personalizada")
+        st.header("💸 Emisión de Facturas y Registro de Pagos")
         
         conn = conectar_bd()
         cursor = conn.cursor()
@@ -468,31 +468,32 @@ else:
             id_contrato, nombre_clie, tipo, saldo_actual, tasa_int, cedula_clie, telefono_clie, direccion_clie = contrato_data
             
             st.markdown("---")
-            st.write("✏️ **Ajusta los montos abajo. La factura se recalcula automáticamente:**")
+            
+            # --- APARTADO ABIERTO PARA ASIGNAR LA FECHA EXACTA EN QUE PAGÓ EL CLIENTE ---
+            if st.session_state["rol"] == "admin":
+                fecha_pago = st.date_input("📅 Fecha real en la que el cliente realizó el pago (Editable por Admin):", value=datetime.date.today())
+                fecha_string = fecha_pago.strftime("%Y-%m-%d")
+            else:
+                fecha_string = datetime.date.today().strftime("%Y-%m-%d")
+                st.write(f"📅 **Fecha de registro de factura:** {fecha_string}")
+            
+            st.markdown("---")
             
             if "San" in tipo:
-                st.info(f"📋 **Modalidad: {tipo}**")
-                monto_pagando = st.number_input("Monto Total que está pagando en esta cuota ($):", min_value=0.0, max_value=float(saldo_actual), step=100.0, value=1000.0 if float(saldo_actual) >= 1000.0 else float(saldo_actual))
-                mora_cobrada = st.number_input("Agregar cargo de Mora / Penalidad ($):", min_value=0.0, value=0.0, step=50.0)
+                st.info(f"📋 **Modalidad actual: {tipo}**")
+                monto_pagando = st.number_input("Monto Total entregado por el cliente ($):", min_value=0.0, max_value=float(saldo_actual), step=100.0, value=1000.0 if float(saldo_actual) >= 1000.0 else float(saldo_actual))
+                mora_cobrada = st.number_input("Mora o penalidad aplicada ($):", min_value=0.0, value=0.0, step=50.0)
                 abono_al_balance = monto_pagando
                 pago_redito_efectivo = 0
             else:
-                st.info("📋 **Modalidad: Rédito**")
-                pago_redito_efectivo = st.number_input("Monto que está pagando únicamente por concepto de Rédito / Interés ($):", min_value=0.0, step=100.0, value=float(saldo_actual)*(tasa_int/100))
-                abono_al_balance = st.number_input("Monto extra que está abonando directo al Capital para bajarlo ($):", min_value=0.0, max_value=float(saldo_actual), step=100.0, value=0.0)
-                mora_cobrada = st.number_input("Agregar cargo de Mora / Penalidad ($):", min_value=0.0, value=0.0, step=50.0)
-            
-            # CONTROL DE FECHAS EXCLUSIVO PARA ADMINISTRADOR
-            if st.session_state["rol"] == "admin":
-                fecha_factura = st.date_input("📅 Fecha de la factura (Ajustable para atrasados/adelantados):", value=datetime.date.today())
-                fecha_string = fecha_factura.strftime("%Y-%m-%d")
-            else:
-                fecha_string = datetime.date.today().strftime("%Y-%m-%d")
-                st.write(f"📅 **Fecha de registro:** {fecha_string}")
+                st.info("📋 **Modalidad actual: Rédito**")
+                pago_redito_efectivo = st.number_input("Monto cobrado por concepto de Interés / Rédito ($):", min_value=0.0, step=100.0, value=float(saldo_actual)*(tasa_int/100))
+                abono_al_balance = st.number_input("Monto extra aportado para bajar el Capital base ($):", min_value=0.0, max_value=float(saldo_actual), step=100.0, value=0.0)
+                mora_cobrada = st.number_input("Mora o penalidad aplicada ($):", min_value=0.0, value=0.0, step=50.0)
                 
             nuevo_saldo_calculado = round(saldo_actual - abono_al_balance, 2)
             
-            # --- GENERACIÓN DINÁMICA DEL RECIBO ---
+            # --- GENERACIÓN DINÁMICA DEL RECIBO QUE RESPONDE AL CAMBIO DE FECHA ---
             if "San" in tipo:
                 texto_recibo = f"""
 📝 *RECIBO DE PAGO - LUISANTH*
@@ -500,7 +501,7 @@ else:
 *Cliente:* {nombre_clie}
 *Cédula:* {cedula_clie}
 *Teléfono:* {telefono_clie}
-*Fecha:* {fecha_string}
+*Fecha de Pago:* {fecha_string}
 *Modalidad:* {tipo}
 -------------------------------------------
 *Monto Pagando:* ${monto_pagando:,.2f}
@@ -518,7 +519,7 @@ else:
 *Cédula:* {cedula_clie}
 *Teléfono:* {telefono_clie}
 *Dirección:* {direccion_clie}
-*Fecha:* {fecha_string}
+*Fecha de Pago:* {fecha_string}
 *Modalidad:* Rédito
 -------------------------------------------
 *Pago de Rédito:* ${pago_redito_efectivo:,.2f}
@@ -530,15 +531,15 @@ else:
 ¡Gracias por su pago confiable!
                 """
             
-            st.markdown("### 📋 Vista de la Factura Actualizada:")
-            st.text_area("Puedes copiar el texto para enviarlo por WhatsApp:", value=texto_recibo.strip(), height=260)
+            st.markdown("### 📋 Vista Previa de la Factura Electrónica:")
+            st.text_area("Copia este bloque de texto para enviarlo por WhatsApp:", value=texto_recibo.strip(), height=260)
             
-            # BOTÓN DE GUARDADO DIRECTO REQUERIDO
-            if st.button("💾 Guardar Cobro en Historial"):
+            # BOTÓN EXPLICITO DE GUARDADO (AFUERA DE CUALQUIER FORMULARIO TRABADO)
+            if st.button("💾 Procesar Pago y Guardar en Historial"):
                 conn = conectar_bd()
                 cursor = conn.cursor()
                 
-                # Insertar en base de datos con los valores reflejados en la factura y la fecha elegida
+                # Insertamos la transacción con la fecha exacta seleccionada arriba
                 cursor.execute("""
                     INSERT INTO pagos (id_contrato, abono_capital, mora_cobrada, fecha) 
                     VALUES (?, ?, ?, ?)
@@ -546,10 +547,10 @@ else:
                 
                 if nuevo_saldo_calculado <= 0:
                     cursor.execute("UPDATE contratos SET saldo_pendiente = 0, estado = 'Inactivo' WHERE id_contrato = ?", (id_contrato,))
-                    st.success(f"💥 ¡Cuenta saldada! El cliente {nombre_clie} ha finalizado su deuda.")
+                    st.success(f"💥 ¡Cuenta liquidada con éxito para {nombre_clie}!")
                 else:
                     cursor.execute("UPDATE contratos SET saldo_pendiente = ? WHERE id_contrato = ?", (nuevo_saldo_calculado, id_contrato))
-                    st.success(f"✅ ¡Cobro guardado! Balance actualizado a: ${nuevo_saldo_calculado:,.2f}")
+                    st.success(f"✅ ¡Cobro guardado! El historial se actualizó al día {fecha_string}.")
                     
                 conn.commit()
                 conn.close()
@@ -557,7 +558,7 @@ else:
                 st.rerun()
 
     # ==========================================
-    # LAS DEMÁS PANTALLAS SE MANTIENEN IGUAL
+    # LAS DEMÁS PANTALLAS SE MANTIENEN SEGUROS
     # ==========================================
     elif opcion == "🧮 Calculadora de Cuotas":
         st.header("Calculadora de Alta Precisión LuisAnth")
