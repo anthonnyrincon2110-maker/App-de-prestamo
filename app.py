@@ -144,7 +144,7 @@ else:
             st.session_state["usuario_actual"] = ""
             st.rerun()
 
-    # --- MENÚ COMPARTIDO TOTAL (AMBOS PUEDEN VER TODO EL MENÚ) ---
+    # --- MENÚ COMPLETAMENTE UNIFICADO PARA AMBOS ---
     menu_opciones = [
         "📊 Panel Financiero", 
         "🔍 Buscador de Clientes",
@@ -294,7 +294,7 @@ else:
             st.table(datos_tabla)
 
     # ==========================================
-    # PANTALLA: PANEL FINANCIERO (VISTA COMPARTIDA, EDICIÓN CAP_BASE PROTEGIDA)
+    # PANTALLA: PANEL FINANCIERO (VISTA GENERAL, EDICIÓN BLOQUEADA AL SOCIO)
     # ==========================================
     elif opcion == "📊 Panel Financiero":
         st.header("Balance General - Control Interno")
@@ -404,7 +404,7 @@ else:
         conn.close()
         
         if not clientes_activos:
-            st.warning("Debes registrar al menos un cliente activo primero.")
+            st.sidebar.warning("Debes registrar al menos un cliente activo primero.")
         else:
             opciones_clientes = {c[1]: c[0] for c in clientes_activos}
             cliente_seleccionado = st.selectbox("Selecciona el Cliente:", list(opciones_clientes.keys()))
@@ -442,7 +442,7 @@ else:
                 st.success(f"¡Contrato {tipo_contrato} activado de forma correcta!")
 
     # ==========================================
-    # PANTALLA: REGISTRAR COBRO (FACTURAS EDITABLES + BOTÓN GUARDAR POST-CAMBIO)
+    # PANTALLA: REGISTRAR COBRO (FACTURAS EDITABLES CON BOTÓN GUARDAR)
     # ==========================================
     elif opcion == "💸 Registrar Cobro (WhatsApp)":
         st.header("Registrar Cobros y Generar Factura Personalizada")
@@ -484,7 +484,7 @@ else:
             
             # CONTROL DE FECHAS EXCLUSIVO PARA ADMINISTRADOR
             if st.session_state["rol"] == "admin":
-                fecha_factura = st.date_input("📅 Fecha de la factura (Editable por Admin):", value=datetime.date.today())
+                fecha_factura = st.date_input("📅 Fecha de la factura (Ajustable para atrasados/adelantados):", value=datetime.date.today())
                 fecha_string = fecha_factura.strftime("%Y-%m-%d")
             else:
                 fecha_string = datetime.date.today().strftime("%Y-%m-%d")
@@ -492,7 +492,7 @@ else:
                 
             nuevo_saldo_calculado = round(saldo_actual - abono_al_balance, 2)
             
-            # --- GENERACIÓN DINÁMICA DEL RECIBO DE WHATSAPP ---
+            # --- GENERACIÓN DINÁMICA DEL RECIBO ---
             if "San" in tipo:
                 texto_recibo = f"""
 📝 *RECIBO DE PAGO - LUISANTH*
@@ -533,12 +533,12 @@ else:
             st.markdown("### 📋 Vista de la Factura Actualizada:")
             st.text_area("Puedes copiar el texto para enviarlo por WhatsApp:", value=texto_recibo.strip(), height=260)
             
-            # BOTÓN DE GUARDADO DIRECTO
+            # BOTÓN DE GUARDADO DIRECTO REQUERIDO
             if st.button("💾 Guardar Cobro en Historial"):
                 conn = conectar_bd()
                 cursor = conn.cursor()
                 
-                # Insertar en base de datos con los valores reflejados en la factura
+                # Insertar en base de datos con los valores reflejados en la factura y la fecha elegida
                 cursor.execute("""
                     INSERT INTO pagos (id_contrato, abono_capital, mora_cobrada, fecha) 
                     VALUES (?, ?, ?, ?)
@@ -656,4 +656,4 @@ else:
                 else:
                     st.error(f"¡Alerta! Tienes un FALTANTE de dinero en caja física de: ${diferencia:,.2f}")
             except sqlite3.IntegrityError:
-                st.error("Ya has guardado un arqueo de caja para el día de hoy.")
+                st.sidebar.error("Ya has guardado un arqueo de caja para el día de hoy.")
