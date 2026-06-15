@@ -144,11 +144,12 @@ else:
             st.session_state["usuario_actual"] = ""
             st.rerun()
 
-    # --- MENÚ GLOBAL E INDEPENDIENTE ---
+    # --- MENÚ GLOBAL E INDEPENDIENTE UNIFICADO ---
     menu_opciones = [
         "📊 Panel Financiero", 
         "🔍 Buscador de Clientes",
         "📋 Cartera y Deudas",
+        "🗂️ Historial de Cobros",
         "👤 Registrar Cliente", 
         "📝 Crear Préstamo / San",
         "💸 Registrar Cobro (WhatsApp)",
@@ -161,9 +162,89 @@ else:
     st.markdown("---")
 
     # ==========================================
+    # PANTALLA NEW: HISTORIAL DE COBROS (EDITABLE Y BORRABLE)
+    # ==========================================
+    if opcion == "🗂️ Historial de Cobros":
+        st.header("🗂️ Historial y Auditoría de Cobros")
+        
+        conn = conectar_bd()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT p.id_pago, cl.nombre, co.tipo, p.abono_capital, p.mora_cobrada, p.fecha, co.id_contrato, co.saldo_pendiente
+            FROM pagos p
+            JOIN contratos co ON p.id_contrato = co.id_contrato
+            JOIN clientes cl ON co.id_cliente = cl.id_cliente
+            ORDER BY p.id_pago DESC
+        """)
+        registros_pagos = cursor.fetchall()
+        conn.close()
+        
+        if not registros_pagos:
+            st.info("No se han registrado transacciones de cobros en el sistema.")
+        else:
+            for p_item in registros_pagos:
+                id_pago, nom_c, tipo_c, abono, mora, fecha_p, id_cont, saldo_actual_c = p_item
+                
+                label_pago = f"📅 {fecha_p} | {nom_c} - Pagó: ${abono:,.2f} ({tipo_c})"
+                with st.expander(label_pago):
+                    if st.session_state["rol"] == "admin":
+                        st.markdown("⚠️ **Modo Administrador: Corrección directa de recibo**")
+                        
+                        with st.form(f"form_pago_{id_pago}"):
+                            nuevo_monto_pago = st.number_input("Monto cobrado correcto ($):", min_value=0.0, value=float(abono), step=50.0)
+                            nueva_mora_pago = st.number_input("Mora cobrada correcta ($):", min_value=0.0, value=float(mora), step=50.0)
+                            
+                            fecha_pago_edit = st.date_input("Fecha real del cobro:", value=datetime.datetime.strptime(fecha_p, "%Y-%m-%d").date())
+                            fecha_string_edit = fecha_pago_edit.strftime("%Y-%m-%d")
+                            
+                            col_p1, col_p2 = st.columns(2)
+                            with col_p1:
+                                btn_edit_pago = st.form_submit_button("💾 Modificar Montos")
+                            with col_p2:
+                                btn_del_pago = st.form_submit_button("🗑️ Eliminar Cobro")
+                                
+                            if btn_edit_pago:
+                                conn = conectar_bd()
+                                cursor = conn.cursor()
+                                
+                                # Lógica Contable: Revertimos el abono viejo y sumamos el nuevo
+                                diferencia_balance = abono - nuevo_monto_pago
+                                nuevo_saldo_contrato = round(saldo_actual_c + diferencia_balance, 2)
+                                
+                                cursor.execute("UPDATE pagos SET abono_capital=?, mora_cobrada=?, fecha=? WHERE id_pago=?", (nuevo_monto_pago, nueva_mora_pago, fecha_string_edit, id_pago))
+                                cursor.execute("UPDATE contratos SET saldo_pendiente=? WHERE id_contrato=?", (nuevo_saldo_contrato, id_cont))
+                                
+                                conn.commit()
+                                conn.close()
+                                st.success("¡Pago corregido y balance recalculado con éxito!")
+                                time.sleep(1.0)
+                                st.rerun()
+                                
+                            if btn_del_pago:
+                                conn = conectar_bd()
+                                cursor = conn.cursor()
+                                
+                                # Al borrar el cobro, la deuda del cliente vuelve a subir de inmediato
+                                nuevo_saldo_contrato = round(saldo_actual_c + abono, 2)
+                                
+                                cursor.execute("DELETE FROM pagos WHERE id_pago=?", (id_pago,))
+                                cursor.execute("UPDATE contratos SET saldo_pendiente=?, estado='Activo' WHERE id_contrato=?", (nuevo_saldo_contrato, id_cont))
+                                
+                                conn.commit()
+                                conn.close()
+                                st.warning("Cobro eliminado. La deuda regresó al balance del cliente.")
+                                time.sleep(1.0)
+                                st.rerun()
+                    else:
+                        st.write(f"**Cliente:** {nom_c}")
+                        st.write(f"**Monto Abonado:** ${abono:,.2f}")
+                        st.write(f"**Mora Aplicada:** ${mora:,.2f}")
+                        st.write(f"**Fecha registrada:** {fecha_p}")
+
+    # ==========================================
     # PANTALLA: BUSCADOR DE CLIENTES + EDICIÓN
     # ==========================================
-    if opcion == "🔍 Buscador de Clientes":
+    elif opcion == "🔍 Buscador de Clientes":
         st.header("🔍 Buscador General de Clientes")
         busqueda = st.text_input("Escribe el nombre o la cédula del cliente para buscar:")
         
@@ -294,7 +375,7 @@ else:
             st.table(datos_tabla)
 
     # ==========================================
-    # PANTALLA: PANEL FINANCIERO
+    # PANTALLA: PANEL FINANCIERO (CON CONEXIÓN AL HISTORIAL AUTOMATIZADA)
     # ==========================================
     elif opcion == "📊 Panel Financiero":
         st.header("📊 Balance General - Control de Empresa")
@@ -429,7 +510,7 @@ else:
                     saldo_pendiente_inicial = monto_total_adeudado
                 else:
                     monto_total_adeudado = monto_entregado
-                    saldo_pendiente_inicial = monto_total_adeudado
+                    saldo_pendiente_inicial = monto_entregado
                 
                 conn = conectar_bd()
                 cursor = conn.cursor()
@@ -442,7 +523,7 @@ else:
                 st.success(f"¡Contrato {tipo_contrato} activado de forma correcta!")
 
     # ==========================================
-    # PANTALLA: REGISTRAR COBRO (CASILLA REESTRUCTURADA SIN TOPES AUTOMÁTICOS)
+    # PANTALLA: REGISTRAR COBRO (WHATSAPP)
     # ==========================================
     elif opcion == "💸 Registrar Cobro (WhatsApp)":
         st.header("💸 Emisión de Facturas y Registro de Pagos")
@@ -468,8 +549,6 @@ else:
             id_contrato, nombre_clie, tipo, saldo_actual, tasa_int, cedula_clie, telefono_clie, direccion_clie = contrato_data
             
             st.markdown("---")
-            
-            # Selector de fechas libre para registrar cobros atrasados/adelantados
             fecha_pago = st.date_input("📅 Selecciona la fecha real en la que pagó el cliente:", value=datetime.date.today())
             fecha_string = fecha_pago.strftime("%Y-%m-%d")
             
@@ -477,7 +556,6 @@ else:
             
             if "San" in tipo:
                 st.info(f"📋 **Modalidad: {tipo}**")
-                # Casilla libre de topes: se inicializa en 0.0 para que escribas libremente el valor real
                 monto_pagando = st.number_input("Monto Total entregado por el cliente ($):", min_value=0.0, max_value=float(saldo_actual), step=100.0, value=0.0)
                 mora_cobrada = st.number_input("Mora o penalidad aplicada ($):", min_value=0.0, value=0.0, step=50.0)
                 abono_al_balance = monto_pagando
